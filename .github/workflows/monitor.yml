@@ -36,6 +36,68 @@ jobs:
           echo "status=fora" >> "$GITHUB_OUTPUT"
           echo "codigo=$CODIGO" >> "$GITHUB_OUTPUT"
 
+      # O ping acima só prova que o servidor respondeu. Em 27/08/2026 o painel
+      # ficou mais de um dia quebrado devolvendo 200 o tempo todo: o servidor
+      # entregava a página e ela morria dentro do navegador, num erro de React.
+      # Nenhuma checagem de HTTP pega isso — só abrindo um navegador de verdade.
+      #
+      # Roda aqui, e não na VM, porque ela tem pouca memória e um navegador não
+      # caberia. Repositório público tem minutos de Actions ilimitados.
+      - name: Abrir o painel num navegador de verdade
+        if: steps.ping.outputs.status == 'no-ar'
+        id: navegador
+        continue-on-error: true
+        run: |
+          npm init -y > /dev/null
+          npm i -D playwright@latest > /dev/null 2>&1
+          npx playwright install --with-deps chromium > /dev/null 2>&1
+          node verificar-painel.mjs
+
+      # Servidor de pé, painel quebrado — o caso que passou despercebido por
+      # mais de um dia: HTTP 200 na mão e tela de erro no navegador.
+      - name: Abrir alerta se o painel quebrou
+        if: steps.navegador.outcome == 'failure'
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const abertos = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'guara-painel-quebrado',
+            });
+            if (abertos.data.length > 0) {
+              core.info('Ja existe alerta aberto: #' + abertos.data[0].number);
+              return;
+            }
+            const agora = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+            const corrida = context.serverUrl + '/' + context.repo.owner + '/' + context.repo.repo + '/actions/runs/' + context.runId;
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: 'Guara: o servidor responde, mas o painel nao abre',
+              labels: ['guara-painel-quebrado'],
+              body: [
+                'O site respondeu HTTP 200, mas ao abrir num navegador de verdade o painel',
+                'nao montou. Quem acessar vai ver tela de erro ou pagina em branco.',
+                '',
+                '- **Quando:** ' + agora + ' (Brasilia)',
+                '- **O erro exato:** [ver o log da verificacao](' + corrida + ')',
+                '',
+                '### Isso nao e a VM caida',
+                'O servidor esta de pe e entregando a pagina. O problema esta no codigo',
+                'do painel — normalmente um erro de JavaScript que derruba o app ao montar.',
+                '',
+                '### Por onde comecar',
+                '1. Abra o log da verificacao acima: ele traz o erro do navegador',
+                '2. Se for erro de React, confira hooks chamados depois de um `return`',
+                '3. Para voltar ao ar rapido, publique a versao anterior: troque a tag',
+                '   `:latest` pelo SHA do commit bom em `deploy/docker-compose.yml`',
+                '',
+                'Este alerta fecha sozinho quando o painel voltar a abrir.',
+              ].join('\n'),
+            });
+
       - name: Abrir alerta se caiu
         if: steps.ping.outputs.status == 'fora'
         uses: actions/github-script@v8
@@ -83,16 +145,29 @@ jobs:
             });
 
       - name: Fechar alerta se voltou
+        # Só fecha o alerta de painel quebrado se o navegador também aprovou.
+        # O site responder já basta para o alerta de "fora do ar", mas não
+        # prova que o painel abre — foi essa distinção que faltou no incidente.
         if: steps.ping.outputs.status == 'no-ar'
         uses: actions/github-script@v8
+        env:
+          PAINEL_OK: ${{ steps.navegador.outcome == 'success' }}
         with:
           script: |
-            const abertos = await github.rest.issues.listForRepo({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              state: 'open',
-              labels: 'guara-fora-do-ar',
-            });
+            const rotulos = process.env.PAINEL_OK === 'true'
+              ? ['guara-fora-do-ar', 'guara-painel-quebrado']
+              : ['guara-fora-do-ar'];
+            const encontrados = [];
+            for (const label of rotulos) {
+              const r = await github.rest.issues.listForRepo({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                state: 'open',
+                labels: label,
+              });
+              encontrados.push(...r.data);
+            }
+            const abertos = { data: encontrados };
             const agora = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
             for (const issue of abertos.data) {
               await github.rest.issues.createComment({
