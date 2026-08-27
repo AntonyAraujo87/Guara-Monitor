@@ -15,7 +15,7 @@ permissions:
   contents: write
 
 env:
-  SITE: https://168-138-141-214.sslip.io
+  SITE: https://guarapp.duckdns.org
 
 jobs:
   verificar:

@@ -6,7 +6,7 @@
 // derrubava o app na hora de montar. Nenhuma checagem de HTTP enxerga isso.
 import { chromium } from 'playwright';
 
-const SITE = process.env.SITE || 'https://168-138-141-214.sslip.io';
+const SITE = process.env.SITE || 'https://guarapp.duckdns.org';
 const MINIMO_DE_TEXTO = 40;
 const ESPERA_CARGA_MS = 25000;
 const ESPERA_RENDER_MS = 15000;

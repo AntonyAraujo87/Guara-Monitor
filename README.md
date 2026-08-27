@@ -1,6 +1,6 @@
 # Monitor do Guará
 
-Vigia se o [Guará](https://168-138-141-214.sslip.io) está no ar, **de fora da VM**.
+Vigia se o [Guará](https://guarapp.duckdns.org) está no ar, **de fora da VM**.
 
 ## Por que existe
 
