@@ -1,0 +1,129 @@
+name: Monitor do Guará
+
+on:
+  schedule:
+    # A cada 15 minutos. O GitHub pode atrasar alguns minutos em horário de pico.
+    - cron: '*/15 * * * *'
+  workflow_dispatch: {}
+
+permissions:
+  issues: write
+  contents: write
+
+env:
+  SITE: https://168-138-141-214.sslip.io
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pingar o site
+        id: ping
+        run: |
+          # Três tentativas antes de declarar queda: evita alarme por soluço de rede.
+          for tentativa in 1 2 3; do
+            CODIGO=$(curl -s -o /dev/null -w "%{http_code}" --max-time 25 "$SITE" || echo 000)
+            echo "tentativa $tentativa -> HTTP $CODIGO"
+            if [ "$CODIGO" = "200" ]; then
+              echo "status=no-ar" >> "$GITHUB_OUTPUT"
+              echo "codigo=$CODIGO" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            sleep 20
+          done
+          echo "status=fora" >> "$GITHUB_OUTPUT"
+          echo "codigo=$CODIGO" >> "$GITHUB_OUTPUT"
+
+      - name: Abrir alerta se caiu
+        if: steps.ping.outputs.status == 'fora'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const codigo = '${{ steps.ping.outputs.codigo }}';
+
+            // Não abre um alerta novo se já existe um aberto — senão vira spam.
+            const abertos = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'guara-fora-do-ar',
+            });
+            if (abertos.data.length > 0) {
+              core.info('Já existe alerta aberto: #' + abertos.data[0].number);
+              return;
+            }
+
+            const agora = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `🔴 Guará fora do ar (HTTP ${codigo})`,
+              labels: ['guara-fora-do-ar'],
+              body: [
+                `O site não respondeu em 3 tentativas seguidas.`,
+                ``,
+                `- **Quando:** ${agora} (Brasília)`,
+                `- **Resposta:** HTTP ${codigo}`,
+                `- **Site:** ${process.env.SITE}`,
+                ``,
+                `### O que provavelmente aconteceu`,
+                `A causa mais provável é a Oracle ter parado a VM por ociosidade.`,
+                `Ela é **parada**, não destruída — os dados estão intactos.`,
+                ``,
+                `### Como religar`,
+                `1. Entre em https://cloud.oracle.com`,
+                `2. Compute → Instances → selecione a instância`,
+                `3. Clique em **Start**`,
+                `4. Aguarde uns 2 minutos; os containers sobem sozinhos (\`restart: always\`)`,
+                ``,
+                `Quando voltar, este alerta fecha sozinho na próxima verificação.`,
+              ].join('\n'),
+            });
+
+      - name: Fechar alerta se voltou
+        if: steps.ping.outputs.status == 'no-ar'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const abertos = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'guara-fora-do-ar',
+            });
+            const agora = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+            for (const issue of abertos.data) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: `✅ Voltou ao ar em ${agora} (Brasília).`,
+              });
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                state: 'closed',
+              });
+            }
+
+      - name: Registrar batimento semanal
+        # O GitHub desativa agendamento em repositório sem commit há 60 dias — e aí o
+        # monitor morreria em silêncio, que é exatamente o que queremos evitar.
+        # Um commit por semana mantém o agendamento vivo pra sempre.
+        if: steps.ping.outputs.status == 'no-ar'
+        run: |
+          ULTIMO=$(git log -1 --format=%ct -- ultima-verificacao.txt 2>/dev/null || echo 0)
+          AGORA=$(date +%s)
+          if [ $((AGORA - ULTIMO)) -lt 604800 ]; then
+            echo "batimento recente, nada a fazer"
+            exit 0
+          fi
+          date -u '+%Y-%m-%d %H:%M UTC — site respondendo normalmente' > ultima-verificacao.txt
+          git config user.name  'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add ultima-verificacao.txt
+          git commit -m 'batimento semanal do monitor'
+          git push
