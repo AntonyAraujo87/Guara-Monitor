@@ -52,9 +52,11 @@ jobs:
         id: navegador
         continue-on-error: true
         run: |
+          # Silencia so a saida normal. Erro continua visivel: escondendo os
+          # dois, uma falha de instalacao viraria um erro de modulo indecifravel.
           npm init -y > /dev/null
-          npm i -D playwright@latest > /dev/null 2>&1
-          npx playwright install --with-deps chromium > /dev/null 2>&1
+          npm i -D playwright@latest > /dev/null
+          npx playwright install --with-deps chromium > /dev/null
           node verificar-painel.mjs
 
       # Servidor de pé, painel quebrado — o caso que passou despercebido por
