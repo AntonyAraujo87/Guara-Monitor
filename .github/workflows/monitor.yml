@@ -5,6 +5,10 @@ on:
     # A cada 15 minutos. O GitHub pode atrasar alguns minutos em horário de pico.
     - cron: '*/15 * * * *'
   workflow_dispatch: {}
+  # Tambem a cada push: garante que a verificacao roda e continua funcionando,
+  # ja que o agendamento do GitHub em repositorio publico e pouco confiavel.
+  push:
+    branches: [main]
 
 permissions:
   issues: write
