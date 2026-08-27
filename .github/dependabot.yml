@@ -1,0 +1,22 @@
+# Este repositório não tem dependências de npm versionadas — o Playwright é
+# instalado na hora, dentro da rotina. O que envelhece aqui são as ações do
+# GitHub que montam a verificação.
+#
+# Uma ação desatualizada costuma parar de funcionar em silêncio quando o GitHub
+# aposenta a versão do runtime. Num monitor, isso é pior que em qualquer outro
+# lugar: ele deixa de rodar e ninguém percebe, porque a ausência de alerta é
+# justamente o que se espera quando está tudo bem.
+version: 2
+
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 2
+    commit-message:
+      prefix: ci
+    groups:
+      acoes:
+        patterns:
+          - "*"
