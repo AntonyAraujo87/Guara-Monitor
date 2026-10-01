@@ -21,7 +21,7 @@ jobs:
   verificar:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Pingar o site
         id: ping
@@ -63,7 +63,7 @@ jobs:
       # mais de um dia: HTTP 200 na mão e tela de erro no navegador.
       - name: Abrir alerta se o painel quebrou
         if: steps.navegador.outcome == 'failure'
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           script: |
             const abertos = await github.rest.issues.listForRepo({
@@ -106,7 +106,7 @@ jobs:
 
       - name: Abrir alerta se caiu
         if: steps.ping.outputs.status == 'fora'
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           script: |
             const codigo = '${{ steps.ping.outputs.codigo }}';
@@ -155,7 +155,7 @@ jobs:
         # O site responder já basta para o alerta de "fora do ar", mas não
         # prova que o painel abre — foi essa distinção que faltou no incidente.
         if: steps.ping.outputs.status == 'no-ar'
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         env:
           PAINEL_OK: ${{ steps.navegador.outcome == 'success' }}
         with:
